@@ -1,0 +1,79 @@
+# Weekly AI Digest – Quellenliste
+#
+# Jede Quelle: Anzeigename, Feed-URL, optional "keywords" (Liste).
+# Wenn "keywords" gesetzt ist, werden nur Artikel behalten, deren Titel oder
+# Beschreibung mindestens eines der Stichwörter enthält (Kleinschreibung
+# spielt keine Rolle). Das ist nötig für Feeds, die nicht AI-exklusiv sind
+# (z. B. "alle EU-Pressemitteilungen").
+#
+# Alle URLs Stand Juli 2026 direkt bei der Quelle bzw. beim Maintainer geprüft.
+
+feeds:
+  # --- AI-Labs (offiziell, komplett AI-spezifisch, kein Filter nötig) ---
+  - name: "OpenAI News"
+    url: "https://openai.com/news/rss.xml"
+  - name: "Google Research Blog"
+    url: "https://research.google/blog/rss"
+
+  # --- Anthropic ---
+  # Anthropic selbst bietet keinen eigenen RSS-Feed an. Dieser Feed wird vom
+  # Alan Turing Institute (UK) im öffentlichen, offiziell von ihnen gepflegten
+  # Projekt "ai-rss-feeds" automatisch aus der Anthropic-News-Seite erzeugt
+  # und regelmäßig aktualisiert. Quelle des Feeds ist damit eine benannte,
+  # seriöse Institution, nicht ein anonymer Drittanbieter – aber es bleibt ein
+  # indirekter Weg, kein Feed von Anthropic selbst (siehe SECURITY_ASSESSMENT.md).
+  - name: "Anthropic News (via Alan Turing Institute Mirror)"
+    url: "https://raw.githubusercontent.com/alan-turing-institute/ai-rss-feeds/refs/heads/main/feeds/anthropic-news.xml"
+
+  # --- Fachpresse / Wissenschaftsjournalismus ---
+  - name: "MIT Technology Review"
+    url: "https://www.technologyreview.com/feed/"
+  - name: "MIT News – AI"
+    url: "https://news.mit.edu/rss/topic/artificial-intelligence2"
+  - name: "MarkTechPost – AI"
+    url: "https://www.marktechpost.com/category/technology/artificial-intelligence/feed"
+
+  # --- Regulierung / Standards (USA) ---
+  - name: "NIST – Information Technology"
+    url: "https://www.nist.gov/news-events/information%20technology/rss.xml"
+    keywords: ["ai", "artificial intelligence", "caisi", "machine learning", "llm", "genai"]
+  - name: "NIST – Cybersecurity"
+    url: "https://www.nist.gov/news-events/cybersecurity/rss.xml"
+    keywords: ["ai", "artificial intelligence", "caisi", "machine learning", "llm", "genai"]
+
+  # --- Regulierung (EU) ---
+  # Feed ALLER Pressemitteilungen der EU-Kommission (nicht nur AI/Digital),
+  # daher zwingend mit Keyword-Filter. Deckt damit auch das AI Office/den
+  # AI Act ab, ohne dass es einen separaten offiziellen AI-Office-Feed gibt.
+  - name: "EU-Kommission – Pressemitteilungen (AI-gefiltert)"
+    url: "https://ec.europa.eu/commission/presscorner/api/rss"
+    keywords: ["artificial intelligence", "ai act", "ai office", "ai", "algorithm"]
+
+  # --- Ethics & Governance (eigene Kategorie) ---
+  # Fokus: ethische/gesellschaftliche Auseinandersetzung mit AI, nicht nur
+  # technische News oder Compliance. Relevant u. a. für ISC2/CC "Security
+  # Principles" und die ethische Dimension von AI-Governance.
+  - name: "Alan Turing Institute – Blog"
+    url: "https://raw.githubusercontent.com/alan-turing-institute/ai-rss-feeds/refs/heads/main/feeds/turing-blog.xml"
+  - name: "Alan Turing Institute – News"
+    url: "https://raw.githubusercontent.com/alan-turing-institute/ai-rss-feeds/refs/heads/main/feeds/turing-news.xml"
+  - name: "Montreal AI Ethics Institute – The AI Ethics Brief"
+    # Substack-Standardfeed (Konvention "/feed" bei jeder Substack-Domain,
+    # auch bei Custom-Domains). Beim ersten Lauf im PDF prüfen, ob Einträge
+    # ankommen; falls nicht, im Browser https://brief.montrealethics.ai/feed
+    # aufrufen und URL ggf. anpassen.
+    url: "https://brief.montrealethics.ai/feed"
+
+# Quellen, für die (Stand Juli 2026) kein zuverlässiger offizieller RSS-Feed
+# gefunden werden konnte:
+#
+#   - Ada Lovelace Institute -> https://www.adalovelaceinstitute.org/
+#     (nur E-Mail-Newsletter, kein RSS-Link auf der Seite)
+#   - UNESCO Ethics of AI    -> https://www.unesco.org/ethics-ai/en
+#     (kein RSS-Link auf der Observatory-Seite auffindbar)
+#   - OECD.AI / The AI Wonk  -> https://oecd.ai/en/wonk
+#     (Blog ohne öffentlichen Feed)
+#
+# Lösung für alle drei: einmalig auf https://rss.app (kostenloser Plan, kein
+# API-Key, nur E-Mail-Login) einen Feed aus der jeweiligen News-Seite
+# generieren lassen und die erzeugte URL hier eintragen.
