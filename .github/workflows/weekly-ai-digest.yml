@@ -26,6 +26,8 @@ jobs:
 
       - name: Generate digest PDF
         run: python generate_digest.py
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
 
       - name: Determine file name and date
         id: vars
@@ -38,6 +40,6 @@ jobs:
           tag_name: digest-${{ steps.vars.outputs.date }}
           name: "AI Digest – ${{ steps.vars.outputs.date }}"
           files: output/*.pdf
-          body: "Automatically generated weekly AI digest."
+          body: "Automatically generated weekly AI digest with Claude summaries."
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
