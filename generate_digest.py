@@ -209,13 +209,26 @@ def header_footer(canvas, doc):
     W, H = A4
 
     if doc.page == 1:
+        band_h = 48 * mm
         # Dark header band
-        band_h = 52 * mm
         canvas.setFillColor(C_DARK)
         canvas.rect(0, H - band_h, W, band_h, fill=1, stroke=0)
-        # Accent stripe
+        # Accent stripe below band
         canvas.setFillColor(C_ACCENT)
         canvas.rect(0, H - band_h - 3, W, 3, fill=1, stroke=0)
+        # Title text
+        canvas.setFillColor(C_WHITE)
+        canvas.setFont("Helvetica-Bold", 26)
+        canvas.drawString(18 * mm, H - 24 * mm, "Weekly AI Digest")
+        # Subtitle
+        canvas.setFont("Helvetica", 9)
+        canvas.setFillColor(colors.HexColor("#bbdefb"))
+        canvas.drawString(18 * mm, H - 34 * mm,
+            f"AI & Technology  ·  {doc.week_label}")
+        canvas.setFillColor(colors.HexColor("#90caf9"))
+        canvas.setFont("Helvetica", 8)
+        canvas.drawRightString(W - 18 * mm, H - 34 * mm,
+            f"Generated {doc.date_label}")
 
     # Footer rule + text on every page
     canvas.setStrokeColor(C_LGRAY)
@@ -234,25 +247,14 @@ def build_pdf(sources, output_path: Path, week_label: str, date_label: str):
 
     doc = SimpleDocTemplate(
         str(output_path), pagesize=A4,
-        topMargin=58 * mm,   # leave room for header band on page 1
+        topMargin=52 * mm,
         bottomMargin=20 * mm,
         leftMargin=18 * mm, rightMargin=18 * mm,
     )
+    doc.week_label = week_label
+    doc.date_label = date_label
 
     story = []
-
-    # ── Header content (sits inside the dark band via negative spacer trick) ──
-    # We use an absolute-positioned canvas draw in header_footer; here we just
-    # add the title text as normal flowables that land in the top margin area.
-    # Because topMargin=58mm and the band is also 52mm, we push content up
-    # with a negative spacer to place it inside the band.
-    story.append(Spacer(1, -46 * mm))
-    story.append(Paragraph("Weekly AI Digest", styles["DigestTitle"]))
-    story.append(Paragraph(
-        f"AI & Technology · {week_label}",
-        styles["DigestSubtitle"]))
-    story.append(Spacer(1, 44 * mm))  # back down past the band
-
     total_items = 0
     active_sources = [s for s in sources if s["items"] or s["error"]]
 
