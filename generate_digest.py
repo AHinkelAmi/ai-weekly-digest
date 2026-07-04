@@ -22,13 +22,27 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import mm
 from reportlab.lib import colors
 from reportlab.platypus import (
-    SimpleDocTemplate, Paragraph, Spacer, HRFlowable
+    SimpleDocTemplate, Paragraph, Spacer, HRFlowable, KeepTogether
 )
+from reportlab.platypus import Frame, PageTemplate
+from reportlab.lib.enums import TA_RIGHT, TA_CENTER
 
 FEEDS_FILE = Path(__file__).parent / "feeds.yaml"
 OUTPUT_DIR = Path(__file__).parent / "output"
 LOOKBACK_DAYS = 7
 MAX_ITEMS_PER_SOURCE = 5
+
+# Brand colours
+C_DARK    = colors.HexColor("#0d1b2a")
+C_BLUE    = colors.HexColor("#1565c0")
+C_BLUE_L  = colors.HexColor("#e8f0fe")
+C_ACCENT  = colors.HexColor("#0288d1")
+C_GRAY    = colors.HexColor("#546e7a")
+C_LGRAY   = colors.HexColor("#eceff1")
+C_TEXT    = colors.HexColor("#212121")
+C_MUTED   = colors.HexColor("#78909c")
+C_ERROR   = colors.HexColor("#c62828")
+C_WHITE   = colors.white
 
 
 def keyword_matches(haystack: str, keywords: list) -> bool:
@@ -65,15 +79,16 @@ def load_feeds():
 def summarise(client: anthropic.Anthropic, title: str, raw_text: str) -> str:
     """Summarise a single article in 2–3 sentences using Claude."""
     if not raw_text.strip():
-        return "(No description available.)"
+        return ""
 
     prompt = (
         f"Article title: {title}\n\n"
         f"Article description: {raw_text}\n\n"
         "Write a clear, informative 2–3 sentence summary of this article "
         "for an AI/tech newsletter. Be concrete and specific. "
-        "Do not start with 'The article' or repeat the title. "
-        "Write in English."
+        "Do not start with 'The article', do not repeat the title, "
+        "do not use markdown formatting, do not use hashtags or headings. "
+        "Write plain prose only. Write in English."
     )
 
     message = client.messages.create(
@@ -81,7 +96,10 @@ def summarise(client: anthropic.Anthropic, title: str, raw_text: str) -> str:
         max_tokens=200,
         messages=[{"role": "user", "content": prompt}],
     )
-    return message.content[0].text.strip()
+    # Strip any accidental markdown headings Claude might add
+    text = message.content[0].text.strip()
+    text = re.sub(r"^#+\s+\S[^\n]*\n*", "", text).strip()
+    return text
 
 
 def collect_items(feeds, client: anthropic.Anthropic):
@@ -99,11 +117,18 @@ def collect_items(feeds, client: anthropic.Anthropic):
                 result["error"] = str(parsed.bozo_exception) or "feed unreachable or empty"
             else:
                 candidates = []
+                seen_titles = set()
                 for entry in parsed.entries:
                     pub_date = parse_entry_date(entry)
                     if pub_date and pub_date < cutoff:
                         continue
                     title = clean_text(getattr(entry, "title", "Untitled"))
+                    # Deduplicate near-identical titles
+                    title_key = re.sub(r"\W+", "", title.lower())
+                    if title_key in seen_titles:
+                        continue
+                    seen_titles.add(title_key)
+
                     raw_summary = clean_text(getattr(entry, "summary", ""))
 
                     if keywords:
@@ -115,11 +140,11 @@ def collect_items(feeds, client: anthropic.Anthropic):
                         "title": title,
                         "raw": raw_summary,
                         "link": getattr(entry, "link", ""),
-                        "date": pub_date.strftime("%Y-%m-%d") if pub_date else "n/a",
+                        "date": pub_date.strftime("%b %d, %Y") if pub_date else "n/a",
                     })
 
                 for item in candidates[:MAX_ITEMS_PER_SOURCE]:
-                    print(f"  Summarising: {item['title'][:60]}…")
+                    print(f"  Summarising: {item['title'][:70]}…")
                     summary = summarise(client, item["title"], item["raw"])
                     result["items"].append({
                         "title": item["title"],
@@ -136,91 +161,143 @@ def collect_items(feeds, client: anthropic.Anthropic):
     return sources
 
 
-def build_pdf(sources, output_path: Path, week_label: str):
-    styles = getSampleStyleSheet()
-    styles.add(ParagraphStyle(
-        name="DigestTitle", fontSize=20, leading=24, spaceAfter=4,
-        textColor=colors.HexColor("#1a1a2e"),
-    ))
-    styles.add(ParagraphStyle(
-        name="DigestSubtitle", fontSize=10, leading=14,
-        textColor=colors.HexColor("#555555"), spaceAfter=16,
-    ))
-    styles.add(ParagraphStyle(
-        name="SourceHeading", fontSize=13, leading=16, spaceBefore=14, spaceAfter=6,
-        textColor=colors.HexColor("#0f4c81"),
-    ))
-    styles.add(ParagraphStyle(
-        name="ItemTitle", fontSize=10.5, leading=13, spaceAfter=1,
-        textColor=colors.HexColor("#111111"),
-    ))
-    styles.add(ParagraphStyle(
-        name="ItemMeta", fontSize=8, leading=10,
-        textColor=colors.HexColor("#888888"), spaceAfter=3,
-    ))
-    styles.add(ParagraphStyle(
-        name="ItemSummary", fontSize=9.5, leading=13,
-        textColor=colors.HexColor("#333333"), spaceAfter=10,
-    ))
-    styles.add(ParagraphStyle(
-        name="NoItems", fontSize=9.5, leading=13, spaceAfter=8,
-        textColor=colors.HexColor("#999999"), fontName="Helvetica-Oblique",
-    ))
-    styles.add(ParagraphStyle(
-        name="ErrorNote", fontSize=8.5, leading=11, spaceAfter=8,
-        textColor=colors.HexColor("#b02a2a"), fontName="Helvetica-Oblique",
-    ))
+def make_styles():
+    base = getSampleStyleSheet()
+
+    def add(name, **kw):
+        base.add(ParagraphStyle(name=name, **kw))
+
+    add("DigestTitle",
+        fontSize=26, leading=30, spaceAfter=2,
+        textColor=C_WHITE, fontName="Helvetica-Bold")
+    add("DigestSubtitle",
+        fontSize=9, leading=13, spaceAfter=0,
+        textColor=colors.HexColor("#bbdefb"))
+    add("WeekLabel",
+        fontSize=8, leading=10,
+        textColor=colors.HexColor("#90caf9"), spaceAfter=0,
+        alignment=TA_RIGHT)
+    add("SectionHeading",
+        fontSize=13, leading=16, spaceBefore=18, spaceAfter=8,
+        textColor=C_BLUE, fontName="Helvetica-Bold",
+        borderPad=0)
+    add("ArticleTitle",
+        fontSize=10, leading=13, spaceAfter=1,
+        textColor=C_DARK, fontName="Helvetica-Bold")
+    add("ArticleMeta",
+        fontSize=7.5, leading=10, spaceAfter=3,
+        textColor=C_MUTED)
+    add("ArticleBody",
+        fontSize=9, leading=13, spaceAfter=0,
+        textColor=C_TEXT)
+    add("NoItems",
+        fontSize=9, leading=12, spaceAfter=6,
+        textColor=C_MUTED, fontName="Helvetica-Oblique")
+    add("ErrorNote",
+        fontSize=8, leading=11, spaceAfter=6,
+        textColor=C_ERROR, fontName="Helvetica-Oblique")
+    add("Footer",
+        fontSize=7, leading=9,
+        textColor=C_MUTED, alignment=TA_CENTER)
+
+    return base
+
+
+def header_footer(canvas, doc):
+    """Draw the cover band on page 1 and a slim rule + footer on all pages."""
+    canvas.saveState()
+    W, H = A4
+
+    if doc.page == 1:
+        # Dark header band
+        band_h = 52 * mm
+        canvas.setFillColor(C_DARK)
+        canvas.rect(0, H - band_h, W, band_h, fill=1, stroke=0)
+        # Accent stripe
+        canvas.setFillColor(C_ACCENT)
+        canvas.rect(0, H - band_h - 3, W, 3, fill=1, stroke=0)
+
+    # Footer rule + text on every page
+    canvas.setStrokeColor(C_LGRAY)
+    canvas.setLineWidth(0.5)
+    canvas.line(18 * mm, 13 * mm, W - 18 * mm, 13 * mm)
+    canvas.setFont("Helvetica", 7)
+    canvas.setFillColor(C_MUTED)
+    canvas.drawCentredString(W / 2, 9 * mm,
+        f"Weekly AI Digest  ·  Summaries generated by Claude  ·  Page {doc.page}")
+
+    canvas.restoreState()
+
+
+def build_pdf(sources, output_path: Path, week_label: str, date_label: str):
+    styles = make_styles()
 
     doc = SimpleDocTemplate(
         str(output_path), pagesize=A4,
-        topMargin=20 * mm, bottomMargin=18 * mm,
+        topMargin=58 * mm,   # leave room for header band on page 1
+        bottomMargin=20 * mm,
         leftMargin=18 * mm, rightMargin=18 * mm,
     )
 
-    story = [
-        Paragraph("Weekly AI Digest", styles["DigestTitle"]),
-        Paragraph(
-            f"Curated update covering {week_label}. Sources: official lab "
-            f"announcements, MIT-affiliated reporting, and specialist AI press. "
-            f"Summaries generated by Claude.",
-            styles["DigestSubtitle"],
-        ),
-        HRFlowable(width="100%", color=colors.HexColor("#cccccc"), thickness=0.8),
-    ]
+    story = []
+
+    # ── Header content (sits inside the dark band via negative spacer trick) ──
+    # We use an absolute-positioned canvas draw in header_footer; here we just
+    # add the title text as normal flowables that land in the top margin area.
+    # Because topMargin=58mm and the band is also 52mm, we push content up
+    # with a negative spacer to place it inside the band.
+    story.append(Spacer(1, -46 * mm))
+    story.append(Paragraph("Weekly AI Digest", styles["DigestTitle"]))
+    story.append(Paragraph(
+        f"AI & Technology · {week_label}",
+        styles["DigestSubtitle"]))
+    story.append(Spacer(1, 44 * mm))  # back down past the band
 
     total_items = 0
+    active_sources = [s for s in sources if s["items"] or s["error"]]
+
     for source in sources:
-        story.append(Paragraph(source["name"], styles["SourceHeading"]))
+        has_content = bool(source["items"]) or bool(source["error"])
+
+        story.append(Paragraph(source["name"], styles["SectionHeading"]))
+        story.append(HRFlowable(width="100%", color=C_BLUE_L, thickness=1, spaceAfter=6))
 
         if source["error"]:
             story.append(Paragraph(
-                f"Could not retrieve this feed ({source['error']}). "
-                f"Check the URL in feeds.yaml.",
-                styles["ErrorNote"],
-            ))
+                f"Feed unavailable: {source['error']}",
+                styles["ErrorNote"]))
             continue
 
         if not source["items"]:
-            story.append(Paragraph(
-                "No new items in the last 7 days.", styles["NoItems"]
-            ))
+            story.append(Paragraph("No new items this week.", styles["NoItems"]))
             continue
 
-        for item in source["items"]:
+        for i, item in enumerate(source["items"]):
             total_items += 1
-            title_link = f'<link href="{item["link"]}">{item["title"]}</link>'
-            story.append(Paragraph(title_link, styles["ItemTitle"]))
-            story.append(Paragraph(item["date"], styles["ItemMeta"]))
-            story.append(Paragraph(item["summary"], styles["ItemSummary"]))
+            title_text = f'<link href="{item["link"]}" color="#1565c0">{item["title"]}</link>'
+            block = [
+                Paragraph(title_text, styles["ArticleTitle"]),
+                Paragraph(item["date"], styles["ArticleMeta"]),
+            ]
+            if item["summary"]:
+                block.append(Paragraph(item["summary"], styles["ArticleBody"]))
+
+            story.append(KeepTogether(block))
+
+            # Thin divider between articles, not after the last one
+            if i < len(source["items"]) - 1:
+                story.append(Spacer(1, 6))
+                story.append(HRFlowable(
+                    width="100%", color=C_LGRAY, thickness=0.5, spaceAfter=6))
+
+        story.append(Spacer(1, 4))
 
     if total_items == 0:
         story.append(Paragraph(
-            "No items were found across any source this week. "
-            "This usually means the feed URLs need to be re-checked.",
-            styles["ErrorNote"],
-        ))
+            "No items were found this week. Check feed URLs in feeds.yaml.",
+            styles["ErrorNote"]))
 
-    doc.build(story)
+    doc.build(story, onFirstPage=header_footer, onLaterPages=header_footer)
 
 
 def main():
@@ -238,10 +315,11 @@ def main():
 
     today = dt.date.today()
     week_start = today - dt.timedelta(days=LOOKBACK_DAYS)
-    week_label = f"{week_start.strftime('%b %d')}–{today.strftime('%b %d, %Y')}"
+    week_label = f"{week_start.strftime('%b %d')} – {today.strftime('%b %d, %Y')}"
+    date_label = today.isoformat()
 
-    output_path = OUTPUT_DIR / f"AI_Digest_{today.isoformat()}.pdf"
-    build_pdf(sources, output_path, week_label)
+    output_path = OUTPUT_DIR / f"AI_Digest_{date_label}.pdf"
+    build_pdf(sources, output_path, week_label, date_label)
     print(f"Digest written to {output_path}")
 
 
